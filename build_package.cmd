@@ -5,7 +5,7 @@ set currentdir=%~dp0
 set root=%currentdir%
 
 set destination=%root%\deploy
-set msbuild=%ProgramFiles(x86)%\MSBuild\14.0\Bin\MsBuild.exe
+set msbuild=%ProgramFiles(x86)%\Microsoft Visual Studio\2017\Enterprise\MSBuild\15.0\Bin\MSBuild.exe
 set nuget=%root%\tools\NuGet\nuget.exe
 
 set solutionfile=%root%\DAX.CIM.Differ.sln
