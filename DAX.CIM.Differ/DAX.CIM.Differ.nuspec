@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>DAX.CIM.Differ</id>
+    <title>DAX.CIM.Differ</title>
+    <version>$version$</version>
+    <authors>jesper_dax,mookid8000</authors>
+    <owners>jesper_dax</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Contains CIM object differ methods</description>
+    <dependencies>
+      <dependency id="DAX.CIM.PhysicalNetworkModel" version="2.1.0-b05"/>
+      <dependency id="FastMember" version="1.3.0"/>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="bin\Release\DAX.CIM.Differ.dll" target="lib\NET45" />
+    <file src="bin\Release\DAX.CIM.Differ.xml" target="lib\NET45" />
+  </files>
+</package>
