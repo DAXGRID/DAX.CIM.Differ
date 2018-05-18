@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Xml.Serialization;
+using DAX.CIM.Differ.Extensions;
 using DAX.CIM.PhysicalNetworkModel;
 using DAX.CIM.PhysicalNetworkModel.Changes;
 using DAX.Cson;
@@ -46,14 +47,14 @@ namespace DAX.CIM.Differ
                         break;
 
                     case ObjectModification objectModification:
-                        var partial = objectModification.Object;
+                        var properties = objectModification.Properties;
 
                         if (!stateDictionary.TryGetValue(mRID, out var currentState))
                         {
                             throw new ArgumentException($"Could not find {targetObject.referenceType}/{mRID} to apply data set member {dataSetMember.mRID} to");
                         }
 
-                        var newState = InnerApplyDiff(currentState, partial);
+                        var newState = InnerApplyDiff(currentState, properties);
 
                         stateDictionary[newState.mRID] = newState;
 
@@ -67,18 +68,16 @@ namespace DAX.CIM.Differ
             return stateDictionary.Values;
         }
 
-        static IdentifiedObject InnerApplyDiff(IdentifiedObject currentState, IdentifiedObject partial)
+        static IdentifiedObject InnerApplyDiff(IdentifiedObject currentState, Dictionary<string, object> properties)
         {
             var targetCsonObject = JObject.Parse(Serializer.SerializeObject(currentState));
-            var partialCsonToApply = JObject.Parse(Serializer.SerializeObject(partial));
 
-            foreach (var property in GetPropertyNames(currentState.GetType()))
+            foreach (var property in properties)
             {
-                var value = partialCsonToApply[property]?.ToObject<object>();
+                var key = property.Key;
+                var value = property.Value;
 
-                if (ReferenceEquals(null, value)) continue;
-
-                targetCsonObject[property] = JToken.FromObject(value);
+                targetCsonObject[key] = JToken.FromObject(value);
             }
 
             return Serializer.DeserializeObject(targetCsonObject.ToString());
@@ -120,7 +119,7 @@ namespace DAX.CIM.Differ
                     Change = new ObjectDeletion(),
                     ReverseChange = new ObjectReverseModification
                     {
-                        Object = deletedObject
+                        Properties = GetProperties(JObject.Parse(Serializer.SerializeObject(deletedObject)))
                     }
                 };
             }
@@ -176,15 +175,18 @@ namespace DAX.CIM.Differ
                     },
                     Change = new ObjectModification
                     {
-                        Object = Serializer.DeserializeObject(change.ToString())
+                        Properties = GetProperties(change)
                     },
                     ReverseChange = new ObjectReverseModification
                     {
-                        Object = Serializer.DeserializeObject(reverseChange.ToString())
+                        Properties = GetProperties(reverseChange)
                     }
                 };
             }
         }
+
+        static Dictionary<string, object> GetProperties(JObject obj) => obj.Properties()
+            .ToDictionary(p => p.Name, p => p.Value.ToObject<object>());
 
         static bool AreEqualJson(JToken previousValue, JToken newValue)
         {

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -24,8 +25,12 @@ namespace DAX.CIM.Differ.Tests.Basic
         protected override void SetUp()
         {
             _differ = new CimDiffer();
-
             _factory = new CimObjectFactory();
+
+            foreach (var type in _factory.GetObjectTypes())
+            {
+                TypeAccessors[type] = TypeAccessor.Create(type);
+            }
         }
 
         [Test]
@@ -46,8 +51,8 @@ namespace DAX.CIM.Differ.Tests.Basic
         void CheckIt(IdentifiedObject currentState, bool verbose)
         {
             var type = currentState.GetType();
-            var newState = _factory.Read().First(o => o.GetType() == type);
-            var typeAccessor = TypeAccessor.Create(newState.GetType());
+            var newState = _factory.Create(type);
+            var typeAccessor = GetTypeAccessor(newState);
 
             // only change some of the properties
             foreach (var property in GetProperties(typeAccessor))
@@ -85,11 +90,8 @@ namespace DAX.CIM.Differ.Tests.Basic
 
             if (dataSetMembers.Count == 0)
             {
-                Console.WriteLine("No change :)");
-
                 Assert.That(newState.ToPrettyCson(), Is.EqualTo(currentState.ToPrettyCson()),
                     "Didn't get a result from the differ, so the two states should be equal");
-
                 return;
             }
 
@@ -134,6 +136,13 @@ which, when applied to CURRENT, yielded THIS result:
 
 {roundtrippedState.ToPrettyCson()}");
         }
+
+        static TypeAccessor GetTypeAccessor(IdentifiedObject newState)
+        {
+            return TypeAccessors.GetOrAdd(newState.GetType(), TypeAccessor.Create);
+        }
+
+        static readonly ConcurrentDictionary<Type, TypeAccessor> TypeAccessors = new ConcurrentDictionary<Type, TypeAccessor>();
 
         static IEnumerable<string> GetProperties(TypeAccessor typeAccessor)
         {

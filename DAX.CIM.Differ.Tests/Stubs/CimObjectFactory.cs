@@ -45,57 +45,61 @@ namespace DAX.CIM.Differ.Tests.Stubs
             _random = new Random(DateTime.Now.GetHashCode());
         }
 
+        public IEnumerable<Type> GetObjectTypes() => _objectTypes.ToList();
+
         static readonly ConcurrentDictionary<Type, TypeAccessor> TypeAccessors = new ConcurrentDictionary<Type, TypeAccessor>();
         static readonly ConcurrentDictionary<Type, string[]> PropertyNames = new ConcurrentDictionary<Type, string[]>();
 
         public IEnumerable<IdentifiedObject> Read()
         {
-            IdentifiedObject Resolve(Type type)
-            {
-                try
-                {
-                    var identifiedObject = (IdentifiedObject)_specimenContext.Resolve(type);
-                    var propertyNames = GetPropertyNames(type);
-                    var typeAccessor = GetTypeAccessor(type);
-
-                    foreach (var name in propertyNames)
-                    {
-                        const string suffixToLookFor = "Specified";
-                        
-                        // we set the value of all of these, depending on whether their corresponding values are set
-                        if (name.EndsWith(suffixToLookFor))
-                        {
-                            var correpondingPropertyName = name.Substring(0, name.Length - suffixToLookFor.Length);
-
-                            // we have some cases where we have the ****Specified property without the actual value property
-                            if (!propertyNames.Contains(correpondingPropertyName)) continue;
-
-                            try
-                            {
-                                var value = typeAccessor[identifiedObject, correpondingPropertyName];
-
-                                typeAccessor[identifiedObject, name] = !ReferenceEquals(null, value);
-                            }
-                            catch (Exception exception)
-                            {
-                                throw new ApplicationException($"Error when trying to get value from property {correpondingPropertyName} from {type} in an attempt to set the value of {name} accordingly", exception);
-                            }
-                        }
-                    }
-
-                    return identifiedObject;
-                }
-                catch (Exception exception)
-                {
-                    throw new ApplicationException($"Could not generate {type} with AutoFixture", exception);
-                }
-            }
-
             while (true)
             {
                 var type = _objectTypes[_random.Next(_objectTypes.Count)];
 
-                yield return Resolve(type);
+                yield return Create(type);
+            }
+        }
+
+        public IdentifiedObject Create<TIdentifiedObject>() where TIdentifiedObject : IdentifiedObject => Create(typeof(TIdentifiedObject));
+
+        public IdentifiedObject Create(Type type)
+        {
+            try
+            {
+                var identifiedObject = (IdentifiedObject) _specimenContext.Resolve(type);
+                var propertyNames = GetPropertyNames(type);
+                var typeAccessor = GetTypeAccessor(type);
+
+                foreach (var name in propertyNames)
+                {
+                    const string suffixToLookFor = "Specified";
+
+                    // we set the value of all of these, depending on whether their corresponding values are set
+                    if (name.EndsWith(suffixToLookFor))
+                    {
+                        var correpondingPropertyName = name.Substring(0, name.Length - suffixToLookFor.Length);
+
+                        // we have some cases where we have the ****Specified property without the actual value property
+                        if (!propertyNames.Contains(correpondingPropertyName)) continue;
+
+                        try
+                        {
+                            var value = typeAccessor[identifiedObject, correpondingPropertyName];
+
+                            typeAccessor[identifiedObject, name] = !ReferenceEquals(null, value);
+                        }
+                        catch (Exception exception)
+                        {
+                            throw new ApplicationException($"Error when trying to get value from property {correpondingPropertyName} from {type} in an attempt to set the value of {name} accordingly", exception);
+                        }
+                    }
+                }
+
+                return identifiedObject;
+            }
+            catch (Exception exception)
+            {
+                throw new ApplicationException($"Could not generate {type} with AutoFixture", exception);
             }
         }
 

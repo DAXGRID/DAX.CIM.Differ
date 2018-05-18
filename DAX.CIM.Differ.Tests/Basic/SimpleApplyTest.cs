@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using DAX.CIM.PhysicalNetworkModel;
 using DAX.CIM.PhysicalNetworkModel.Changes;
+using DAX.Cson;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using Testy;
 
@@ -11,9 +14,11 @@ namespace DAX.CIM.Differ.Tests.Basic
     public class SimpleApplyTest : FixtureBase
     {
         CimDiffer _differ;
+        CsonSerializer _serializer;
 
         protected override void SetUp()
         {
+            _serializer = new CsonSerializer();
             _differ = new CimDiffer();
         }
 
@@ -31,8 +36,13 @@ namespace DAX.CIM.Differ.Tests.Basic
             {
                 mRID = Guid.NewGuid().ToString(),
                 Change = new ObjectDeletion(),
-                TargetObject = new TargetObject { @ref = deletedObject.mRID, referenceType = nameof(ConnectivityNode) },
-                ReverseChange = new ObjectReverseModification { Object = deletedObject }
+                TargetObject = new TargetObject {@ref = deletedObject.mRID, referenceType = nameof(ConnectivityNode)},
+                ReverseChange = new ObjectReverseModification
+                {
+                    Properties = JObject.Parse(_serializer.SerializeObject(deletedObject))
+                        .Properties()
+                        .ToDictionary(p => p.Name, p => p.Value.ToObject<object>())
+                }
             };
 
             var result = _differ.ApplyDiff(new[] { deletedObject }, new[] { change }).ToList();
@@ -82,18 +92,18 @@ namespace DAX.CIM.Differ.Tests.Basic
                 mRID = Guid.NewGuid().ToString(),
                 Change = new ObjectModification
                 {
-                    Object = new ConnectivityNode
+                    Properties = new Dictionary<string, object>
                     {
-                        description = "this is my connectivity node (spelning corected)"
-                    },
+                        {"description", "this is my connectivity node (spelning corected)"}
+                    }
                 },
 
                 // not necessary for this test, but play it realistic
                 ReverseChange = new ObjectReverseModification
                 {
-                    Object = new ConnectivityNode
+                    Properties = new Dictionary<string, object>
                     {
-                        description = "this is my connectivitivity nodode"
+                        {"description", "this is my connectivitivity nodode"}
                     }
                 },
 

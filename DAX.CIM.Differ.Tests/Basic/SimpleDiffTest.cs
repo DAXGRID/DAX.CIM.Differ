@@ -5,6 +5,8 @@ using DAX.CIM.Differ.Tests.Extensions;
 using DAX.CIM.Differ.Tests.Stubs;
 using DAX.CIM.PhysicalNetworkModel;
 using DAX.CIM.PhysicalNetworkModel.Changes;
+using DAX.Cson;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using Testy;
@@ -19,11 +21,12 @@ namespace DAX.CIM.Differ.Tests.Basic
 
         CimDiffer _differ;
         CimObjectFactory _factory;
+        CsonSerializer _serializer;
 
         protected override void SetUp()
         {
             _differ = new CimDiffer();
-
+            _serializer = new CsonSerializer();
             _factory = new CimObjectFactory();
         }
 
@@ -38,9 +41,8 @@ namespace DAX.CIM.Differ.Tests.Basic
         [Test]
         public void CanDetectObjectCreation()
         {
-            var identifiedObject = _factory.Read().OfType<ConnectivityNode>().First();
-            var newState = new IdentifiedObject[] { identifiedObject };
-
+            var identifiedObject = _factory.Create<ConnectivityNode>();
+            var newState = new[] { identifiedObject };
 
             var result = _differ.GetDiff(None, newState).ToList();
 
@@ -64,9 +66,8 @@ namespace DAX.CIM.Differ.Tests.Basic
         [Test]
         public void CanDetectObjectDeletion()
         {
-            var identifiedObject = _factory.Read().OfType<ConnectivityNode>().First();
-            var oldState = new IdentifiedObject[] { identifiedObject };
-
+            var identifiedObject = _factory.Create<ConnectivityNode>();
+            var oldState = new[] { identifiedObject };
 
             var result = _differ.GetDiff(oldState, None).ToList();
 
@@ -85,9 +86,21 @@ namespace DAX.CIM.Differ.Tests.Basic
 
             Assert.That(change, Is.Not.Null);
 
-            var roundtrippedIdentifiedObject = change.Object;
+            var properties = change.Properties;
 
-            Assert.That(roundtrippedIdentifiedObject.ToPrettyJson(), Is.EqualTo(identifiedObject.ToPrettyJson()));
+            var originalProperties = JObject.Parse(_serializer.SerializeObject(identifiedObject))
+                .Properties()
+                .ToDictionary(p => p.Name, p => p.Value.ToObject<object>());
+
+            AssertDictionariesAreTheSame(properties, originalProperties);
+        }
+
+        static void AssertDictionariesAreTheSame(Dictionary<string, object> d1, Dictionary<string, object> d2)
+        {
+            var dict1 = d1.ToPrettyJson();
+            var dict2 = d2.ToPrettyJson();
+
+            Assert.That(dict1, Is.EqualTo(dict2) );
         }
 
         [Test]
@@ -120,29 +133,11 @@ namespace DAX.CIM.Differ.Tests.Basic
 
             var objectModification = (ObjectModification)changeSetMember;
 
-            var newObject = objectModification.Object;
-            var previousObject = dataSetMember.ReverseChange.Object;
+            var change = objectModification.Properties;
+            var reverse = dataSetMember.ReverseChange.Properties;
 
-            var newCson = newObject.ToPrettyCson();
-            var oldCson = previousObject.ToPrettyCson();
-
-            Console.WriteLine($@"{oldCson}
-
-=>
-
-{newCson}");
-
-            var newJsonObject = JObject.Parse(newCson);
-            var oldJsonObject = JObject.Parse(oldCson);
-
-            Assert.That(oldJsonObject.Count, Is.EqualTo(2));
-            Assert.That(newJsonObject.Count, Is.EqualTo(2));
-
-            Assert.That(oldJsonObject["$type"].Value<string>(), Is.EqualTo(nameof(ConnectivityNode)));
-            Assert.That(newJsonObject["$type"].Value<string>(), Is.EqualTo(nameof(ConnectivityNode)));
-
-            Assert.That(oldJsonObject["description"].Value<string>(), Is.EqualTo("this is my connectivitivity nodode"));
-            Assert.That(newJsonObject["description"].Value<string>(), Is.EqualTo("this is my connectivity node"));
+            Assert.That(change, Contains.Key("description").And.ContainValue("this is my connectivity node"));
+            Assert.That(reverse, Contains.Key("description").And.ContainValue("this is my connectivitivity nodode"));
         }
     }
 }
