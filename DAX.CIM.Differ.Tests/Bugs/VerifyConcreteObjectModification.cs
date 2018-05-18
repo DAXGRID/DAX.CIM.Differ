@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using DAX.CIM.Differ.Tests.Extensions;
+using DAX.CIM.PhysicalNetworkModel.Changes;
 using DAX.Cson;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
@@ -67,10 +68,9 @@ Yields this diff:
 
 {dataSetMember.ToPrettyCson()}");
 
-            var cson = JObject.Parse(dataSetMember.ToPrettyCson());
-            var csonChange = cson["Change"]["Object"].ToObject<JObject>();
+            var objectModification = (ObjectModification)dataSetMember.Change;
 
-            Assert.That(csonChange.Properties().Select(p => p.Name).OrderBy(n => n).ToArray(), Is.EqualTo(new[]
+            Assert.That(objectModification.Properties.Keys.OrderBy(n => n).ToArray(), Is.EqualTo(new[]
             {
                 "$type",
                 "name",

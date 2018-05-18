@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Linq;
 using DAX.CIM.Differ.Tests.Extensions;
+using DAX.CIM.PhysicalNetworkModel.Changes;
 using DAX.Cson;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using Testy;
+using Testy.Extensions;
 
 namespace DAX.CIM.Differ.Tests.Bugs
 {
@@ -86,9 +88,9 @@ namespace DAX.CIM.Differ.Tests.Bugs
             var dataSetMembers = _differ.GetDiff(new[] {previousState}, new[] {newState}).First();
 
             var cson = dataSetMembers.ToPrettyCson();
-            var csonObject = JObject.Parse(cson);
 
-            var change = csonObject["Change"]["Object"].ToObject<JObject>();
+            var objectModification = (ObjectModification)dataSetMembers.Change;
+            var change = objectModification.ToPrettyJson();
 
             Console.WriteLine($@"{PreviousCson}
 
@@ -98,9 +100,9 @@ namespace DAX.CIM.Differ.Tests.Bugs
 
 yields this diff:
 
-{change.ToString(Formatting.Indented)}");
+{change}");
 
-            var propertyNamesIncludedInTheDiff = change.Properties().Select(p => p.Name).OrderBy(n => n).ToArray();
+            var propertyNamesIncludedInTheDiff = objectModification.Properties.Keys.OrderBy(n => n).ToArray();
 
             Assert.That(propertyNamesIncludedInTheDiff, Is.EqualTo(new[]
             {

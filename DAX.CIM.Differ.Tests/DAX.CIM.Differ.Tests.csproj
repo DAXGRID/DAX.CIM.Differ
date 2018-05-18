@@ -90,6 +90,7 @@
     <Compile Include="Bugs\VerifyConcreteObjectModification.cs" />
     <Compile Include="Extensions\CsonExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Speed\SeeHowFastWeCanGenerateDiff.cs" />
     <Compile Include="Stubs\CimObjectFactory.cs" />
   </ItemGroup>
   <ItemGroup>
