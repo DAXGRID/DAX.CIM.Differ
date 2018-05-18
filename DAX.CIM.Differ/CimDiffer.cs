@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,7 +6,9 @@ using System.Runtime.Serialization;
 using System.Xml.Serialization;
 using DAX.CIM.PhysicalNetworkModel;
 using DAX.CIM.PhysicalNetworkModel.Changes;
+using DAX.Cson;
 using FastMember;
+using Newtonsoft.Json.Linq;
 // ReSharper disable ReturnTypeCanBeEnumerable.Local
 // ReSharper disable InconsistentNaming
 
@@ -18,6 +19,9 @@ namespace DAX.CIM.Differ
     /// </summary>
     public class CimDiffer
     {
+        static readonly ConcurrentDictionary<Type, string[]> PropertyNames = new ConcurrentDictionary<Type, string[]>();
+        static readonly CsonSerializer Serializer = new CsonSerializer();
+
         public IEnumerable<IdentifiedObject> ApplyDiff(IEnumerable<IdentifiedObject> state, IEnumerable<DataSetMember> diff)
         {
             var stateDictionary = state.ToDictionary(s => s.mRID);
@@ -26,23 +30,22 @@ namespace DAX.CIM.Differ
             {
                 var change = dataSetMember.Change;
 
-                if (change is ObjectCreation objectCreation)
-                {
-                    var identifiedObject = objectCreation.Object;
+                var targetObject = dataSetMember.TargetObject;
+                var mRID = targetObject.@ref;
 
-                    stateDictionary[identifiedObject.mRID] = identifiedObject;
-                }
-                else
+                switch (change)
                 {
-                    var targetObject = dataSetMember.TargetObject;
-                    var mRID = targetObject.@ref;
+                    case ObjectCreation objectCreation:
+                        var identifiedObject = objectCreation.Object;
 
-                    if (change is ObjectDeletion)
-                    {
+                        stateDictionary[identifiedObject.mRID] = identifiedObject;
+                        break;
+
+                    case ObjectDeletion _:
                         stateDictionary.Remove(mRID);
-                    }
-                    else if (change is ObjectModification objectModification)
-                    {
+                        break;
+
+                    case ObjectModification objectModification:
                         var partial = objectModification.Object;
 
                         if (!stateDictionary.TryGetValue(mRID, out var currentState))
@@ -53,11 +56,11 @@ namespace DAX.CIM.Differ
                         var newState = InnerApplyDiff(currentState, partial);
 
                         stateDictionary[newState.mRID] = newState;
-                    }
-                    else
-                    {
+
+                        break;
+
+                    default:
                         throw new ArgumentException($"Unknown ChangeSetMember subclass: {change.GetType()}");
-                    }
                 }
             }
 
@@ -66,34 +69,19 @@ namespace DAX.CIM.Differ
 
         static IdentifiedObject InnerApplyDiff(IdentifiedObject currentState, IdentifiedObject partial)
         {
-            var type = currentState.GetType();
-            var typeAccessor = GetTypeAccessor(type);
-            var properties = GetPropertyNames(type);
+            var targetCsonObject = JObject.Parse(Serializer.SerializeObject(currentState));
+            var partialCsonToApply = JObject.Parse(Serializer.SerializeObject(partial));
 
-            var clone = Clone(currentState, properties, typeAccessor);
-
-            foreach (var property in properties)
+            foreach (var property in GetPropertyNames(currentState.GetType()))
             {
-                var value = typeAccessor[partial, property];
+                var value = partialCsonToApply[property]?.ToObject<object>();
 
                 if (ReferenceEquals(null, value)) continue;
 
-                typeAccessor[clone, property] = value;
+                targetCsonObject[property] = JToken.FromObject(value);
             }
 
-            return clone;
-        }
-
-        static IdentifiedObject Clone(IdentifiedObject obj, string[] properties, TypeAccessor typeAccessor)
-        {
-            var clone = (IdentifiedObject)typeAccessor.CreateNew();
-
-            foreach (var property in properties)
-            {
-                typeAccessor[clone, property] = typeAccessor[obj, property];
-            }
-
-            return clone;
+            return Serializer.DeserializeObject(targetCsonObject.ToString());
         }
 
         public IEnumerable<DataSetMember> GetDiff(IEnumerable<IdentifiedObject> previousState, IEnumerable<IdentifiedObject> newState)
@@ -143,29 +131,37 @@ namespace DAX.CIM.Differ
             {
                 var previousInstance = previousStateDictionary[id];
                 var newInstance = newStateDictionary[id];
-                var objectType = previousInstance.GetType();
+                var type = newInstance.GetType();
 
-                var typeAccessor = GetTypeAccessor(objectType);
-                var propertyNames = GetPropertyNames(objectType);
+                var previousCsonObject = JObject.Parse(Serializer.SerializeObject(previousInstance));
+                var newCsonObject = JObject.Parse(Serializer.SerializeObject(newInstance));
 
-                object change = null;
-                object reverseChange = null;
+                JObject change = null;
+                JObject reverseChange = null;
+
+                var propertyNames = GetPropertyNames(previousInstance.GetType());
 
                 foreach (var property in propertyNames)
                 {
-                    var previousValue = typeAccessor[previousInstance, property];
-                    var newValue = typeAccessor[newInstance, property];
+                    // we know this one is the same
+                    if (property == nameof(IdentifiedObject.mRID)) continue;
 
-                    if (AreEqual(previousValue, newValue)) continue;
+                    var previousValue = previousCsonObject[property];
+                    var newValue = newCsonObject[property];
+
+                    if (AreEqualJson(previousValue, newValue)) continue;
 
                     if (change == null)
                     {
-                        change = typeAccessor.CreateNew();
-                        reverseChange = typeAccessor.CreateNew();
+                        change = new JObject();
+                        reverseChange = new JObject();
+
+                        change["$type"] = type.Name;
+                        reverseChange["$type"] = type.Name;
                     }
 
-                    typeAccessor[change, property] = newValue;
-                    typeAccessor[reverseChange, property] = previousValue;
+                    change[property] = newValue != null ? JToken.FromObject(newValue) : null;
+                    reverseChange[property] = previousValue != null ? JToken.FromObject(previousValue) : null;
                 }
 
                 if (change == null) continue;
@@ -176,19 +172,21 @@ namespace DAX.CIM.Differ
                     TargetObject = new TargetObject
                     {
                         @ref = newInstance.mRID,
-                        referenceType = newInstance.GetType().Name,
+                        referenceType = type.Name,
                     },
-                    Change = new ObjectModification { Object = (IdentifiedObject)change },
-                    ReverseChange = new ObjectReverseModification { Object = (IdentifiedObject)reverseChange }
+                    Change = new ObjectModification
+                    {
+                        Object = Serializer.DeserializeObject(change.ToString())
+                    },
+                    ReverseChange = new ObjectReverseModification
+                    {
+                        Object = Serializer.DeserializeObject(reverseChange.ToString())
+                    }
                 };
             }
         }
 
-        static TypeAccessor GetTypeAccessor(Type type) => TypeAccessors.GetOrAdd(type, _ => TypeAccessor.Create(type));
-
-        static readonly ConcurrentDictionary<Type, TypeAccessor> TypeAccessors = new ConcurrentDictionary<Type, TypeAccessor>();
-
-        static bool AreEqual(object previousValue, object newValue)
+        static bool AreEqualJson(JToken previousValue, JToken newValue)
         {
             if (ReferenceEquals(null, previousValue) && ReferenceEquals(null, newValue)) return true;
 
@@ -196,26 +194,12 @@ namespace DAX.CIM.Differ
 
             if (ReferenceEquals(null, newValue)) return false;
 
-            // sopecial handling of sequences of objects
-            if (previousValue is IEnumerable<object> previousSequence && newValue is IEnumerable<object> newSequence)
-            {
-                var previousValues = previousSequence.ToArray();
-                var newValues = newSequence.ToArray();
+            var previousStr = previousValue.ToString();
+            var newStr = newValue.ToString();
+            var areEqual = string.Equals(previousStr, newStr, StringComparison.Ordinal);
 
-                if (previousValues.Length != newValues.Length) return false;
-
-                for (var index = 0; index < previousValues.Length; index++)
-                {
-                    if (!AreEqual(previousValues[index], newValues[index])) return false;
-                }
-
-                return true;
-            }
-
-            return Equals(previousValue, newValue);
+            return areEqual;
         }
-
-        static readonly ConcurrentDictionary<Type, string[]> PropertyNames = new ConcurrentDictionary<Type, string[]>();
 
         static string[] GetPropertyNames(Type type)
         {

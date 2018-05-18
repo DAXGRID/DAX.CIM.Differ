@@ -30,6 +30,9 @@ namespace DAX.CIM.Differ.Tests.Basic
 
         [Test]
         [TestCase(1, true)]
+        [TestCase(10, false)]
+        [TestCase(100, false)]
+        [TestCase(1000, false)]
         public void ObjectModificationsLookFine(int count, bool verbose)
         {
             var identifiedObjects = _factory.Read().Take(count);
@@ -47,11 +50,8 @@ namespace DAX.CIM.Differ.Tests.Basic
             var typeAccessor = TypeAccessor.Create(newState.GetType());
 
             // only change some of the properties
-            var properties = GetProperties(typeAccessor);
-            Console.WriteLine($"Type {type} has these properties:");
-            foreach (var property in properties)
+            foreach (var property in GetProperties(typeAccessor))
             {
-                Console.WriteLine($"    {property}");
                 try
                 {
                     // 20% chance we will change the value
@@ -87,7 +87,7 @@ namespace DAX.CIM.Differ.Tests.Basic
             {
                 Console.WriteLine("No change :)");
 
-                Assert.That(newState.ToPrettyCson(), Is.EqualTo(currentState.ToPrettyCson()), 
+                Assert.That(newState.ToPrettyCson(), Is.EqualTo(currentState.ToPrettyCson()),
                     "Didn't get a result from the differ, so the two states should be equal");
 
                 return;
@@ -97,10 +97,13 @@ namespace DAX.CIM.Differ.Tests.Basic
 
             var dataSetMember = dataSetMembers.First();
 
-            Console.WriteLine($@"Got this diff:
+            if (verbose)
+            {
+                Console.WriteLine($@"Got this diff:
 
 {dataSetMember.ToPrettyCson()}
 ");
+            }
 
             var roundtrippedSequence = _differ.ApplyDiff(new[] { currentState }, dataSetMembers).ToList();
 
@@ -108,11 +111,28 @@ namespace DAX.CIM.Differ.Tests.Basic
 
             var roundtrippedState = roundtrippedSequence.First();
 
-            Console.WriteLine($@"Got this roundtripped state:
+            if (verbose)
+            {
+                Console.WriteLine($@"Got this roundtripped state:
 
 {roundtrippedState.ToPrettyCson()}");
+            }
 
-            Assert.That(roundtrippedState.ToPrettyJson(), Is.EqualTo(newState.ToPrettyJson()));
+            Assert.That(roundtrippedState.ToPrettyJson(), Is.EqualTo(newState.ToPrettyJson()), $@"This state change (CURRENT):
+
+{currentState.ToPrettyCson()}
+
+=>
+
+{newState.ToPrettyCson()}
+
+yielded this diff:
+
+{dataSetMember.ToPrettyCson()}
+
+which, when applied to CURRENT, yielded THIS result:
+
+{roundtrippedState.ToPrettyCson()}");
         }
 
         static IEnumerable<string> GetProperties(TypeAccessor typeAccessor)

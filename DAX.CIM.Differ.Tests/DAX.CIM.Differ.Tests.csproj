@@ -50,7 +50,7 @@
       <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.1.0-b05\lib\NET45\DAX.CIM.PhysicalNetworkModel.Traversal.dll</HintPath>
     </Reference>
     <Reference Include="DAX.Cson, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\DAX.Cson.1.0.0-b02\lib\NET45\DAX.Cson.dll</HintPath>
+      <HintPath>..\packages\DAX.Cson.1.0.0-b03\lib\NET45\DAX.Cson.dll</HintPath>
     </Reference>
     <Reference Include="Fare, Version=2.1.0.0, Culture=neutral, PublicKeyToken=ea68d375bf33a7c8, processorArchitecture=MSIL">
       <HintPath>..\packages\Fare.2.1.1\lib\net35\Fare.dll</HintPath>
@@ -86,6 +86,8 @@
     <Compile Include="Basic\SimpleApplyTest.cs" />
     <Compile Include="Basic\SimpleDiffTest.cs" />
     <Compile Include="Basic\VerifyManyObjectModifications.cs" />
+    <Compile Include="Bugs\VerifyAnotherConcreteObjectModification.cs" />
+    <Compile Include="Bugs\VerifyConcreteObjectModification.cs" />
     <Compile Include="Extensions\CsonExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Stubs\CimObjectFactory.cs" />
