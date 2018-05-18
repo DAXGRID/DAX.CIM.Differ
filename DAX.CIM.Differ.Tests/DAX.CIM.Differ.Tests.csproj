@@ -83,6 +83,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Basic\SimpleApplyTest.cs" />
     <Compile Include="Basic\SimpleDiffTest.cs" />
     <Compile Include="Extensions\CsonExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

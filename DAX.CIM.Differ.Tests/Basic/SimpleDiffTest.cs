@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using AutoFixture.Kernel;
 using DAX.CIM.Differ.Tests.Extensions;
 using DAX.CIM.Differ.Tests.Stubs;
 using DAX.CIM.PhysicalNetworkModel;
