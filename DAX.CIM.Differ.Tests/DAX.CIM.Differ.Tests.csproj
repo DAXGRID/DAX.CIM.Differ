@@ -85,6 +85,7 @@
   <ItemGroup>
     <Compile Include="Basic\SimpleApplyTest.cs" />
     <Compile Include="Basic\SimpleDiffTest.cs" />
+    <Compile Include="Basic\VerifyManyObjectModifications.cs" />
     <Compile Include="Extensions\CsonExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Stubs\CimObjectFactory.cs" />

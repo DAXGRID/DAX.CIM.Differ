@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -194,6 +195,22 @@ namespace DAX.CIM.Differ
             if (ReferenceEquals(null, previousValue)) return false;
 
             if (ReferenceEquals(null, newValue)) return false;
+
+            // sopecial handling of sequences of objects
+            if (previousValue is IEnumerable<object> previousSequence && newValue is IEnumerable<object> newSequence)
+            {
+                var previousValues = previousSequence.ToArray();
+                var newValues = newSequence.ToArray();
+
+                if (previousValues.Length != newValues.Length) return false;
+
+                for (var index = 0; index < previousValues.Length; index++)
+                {
+                    if (!AreEqual(previousValues[index], newValues[index])) return false;
+                }
+
+                return true;
+            }
 
             return Equals(previousValue, newValue);
         }
