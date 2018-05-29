@@ -3,7 +3,6 @@ using System.Linq;
 using DAX.CIM.Differ.Tests.Extensions;
 using DAX.CIM.PhysicalNetworkModel.Changes;
 using DAX.Cson;
-using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using Testy;
 
