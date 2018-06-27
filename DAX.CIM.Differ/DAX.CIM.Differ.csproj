@@ -32,16 +32,16 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="DAX.CIM.PhysicalNetworkModel, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.1.1\lib\NET45\DAX.CIM.PhysicalNetworkModel.dll</HintPath>
+      <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.2.0-b01\lib\NET45\DAX.CIM.PhysicalNetworkModel.dll</HintPath>
     </Reference>
     <Reference Include="DAX.CIM.PhysicalNetworkModel.FeederInfo, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.1.1\lib\NET45\DAX.CIM.PhysicalNetworkModel.FeederInfo.dll</HintPath>
+      <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.2.0-b01\lib\NET45\DAX.CIM.PhysicalNetworkModel.FeederInfo.dll</HintPath>
     </Reference>
     <Reference Include="DAX.CIM.PhysicalNetworkModel.LineInfo, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.1.1\lib\NET45\DAX.CIM.PhysicalNetworkModel.LineInfo.dll</HintPath>
+      <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.2.0-b01\lib\NET45\DAX.CIM.PhysicalNetworkModel.LineInfo.dll</HintPath>
     </Reference>
     <Reference Include="DAX.CIM.PhysicalNetworkModel.Traversal, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.1.1\lib\NET45\DAX.CIM.PhysicalNetworkModel.Traversal.dll</HintPath>
+      <HintPath>..\packages\DAX.CIM.PhysicalNetworkModel.2.2.0-b01\lib\NET45\DAX.CIM.PhysicalNetworkModel.Traversal.dll</HintPath>
     </Reference>
     <Reference Include="DAX.Cson, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\DAX.Cson.1.0.0-b04\lib\NET45\DAX.Cson.dll</HintPath>
@@ -55,16 +55,22 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.ValueTuple, Version=4.0.1.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.ValueTuple.4.3.0\lib\netstandard1.0\System.ValueTuple.dll</HintPath>
+    </Reference>
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CimDiffer.cs" />
     <Compile Include="Extensions\IdentifiedObjectExtensions.cs" />
+    <Compile Include="Extensions\TypeAccessorExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
-    <None Include="DAX.CIM.Differ.nuspec" />
+    <None Include="DAX.CIM.Differ.nuspec">
+      <SubType>Designer</SubType>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
