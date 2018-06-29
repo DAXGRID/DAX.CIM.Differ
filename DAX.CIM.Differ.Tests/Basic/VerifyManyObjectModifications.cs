@@ -7,6 +7,7 @@ using System.Xml.Serialization;
 using DAX.CIM.Differ.Tests.Extensions;
 using DAX.CIM.Differ.Tests.Stubs;
 using DAX.CIM.PhysicalNetworkModel;
+using DAX.Cson;
 using FastMember;
 using NUnit.Framework;
 using Testy;

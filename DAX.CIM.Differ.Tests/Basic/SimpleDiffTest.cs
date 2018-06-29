@@ -6,6 +6,7 @@ using DAX.CIM.Differ.Tests.Stubs;
 using DAX.CIM.PhysicalNetworkModel;
 using DAX.CIM.PhysicalNetworkModel.Changes;
 using DAX.Cson;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using Testy;
@@ -103,43 +104,6 @@ namespace DAX.CIM.Differ.Tests.Basic
         }
 
         [Test]
-        public void CanDetectObjectModification()
-        {
-            var previousState = new ConnectivityNode
-            {
-                mRID = "123",
-                description = "this is my connectivitivity nodode",
-                name = "Connode"
-            };
-
-            var newState = previousState.Clone();
-
-            newState.description = "this is my connectivity node";
-
-            var dataSetMembers = _differ.GetDiff(new IdentifiedObject[] { previousState }, new IdentifiedObject[] { newState }).ToList();
-
-            Assert.That(dataSetMembers.Count, Is.EqualTo(1));
-
-            var dataSetMember = dataSetMembers.First();
-
-            var cson = dataSetMember.ToPrettyCson();
-
-            Console.WriteLine(cson);
-
-            var changeSetMember = dataSetMember.Change;
-
-            Assert.That(changeSetMember, Is.TypeOf<ObjectModification>());
-
-            var objectModification = (ObjectModification)changeSetMember;
-
-            var change = objectModification.Properties;
-            var reverse = dataSetMember.ReverseChange.Properties;
-
-            Assert.That(change, Contains.Key("description").And.ContainValue("this is my connectivity node"));
-            Assert.That(reverse, Contains.Key("description").And.ContainValue("this is my connectivitivity nodode"));
-        }
-
-        [Test]
         public void CanDetectObjectModification_New()
         {
             var previousState = new ConnectivityNode
@@ -172,8 +136,8 @@ namespace DAX.CIM.Differ.Tests.Basic
             var modifications = objectModification.Modifications;
             var reverseModifications = dataSetMember.ReverseChange.Modifications;
 
-            AssertHasModification(modifications, "description", "this is my connectivity node");
-            AssertHasModification(reverseModifications, "description", "this is my connectivitivity nodode");
+            Assert.That(GetModification(modifications, "description").Value, Is.EqualTo("this is my connectivity node"));
+            Assert.That(GetModification(reverseModifications, "description").Value, Is.EqualTo("this is my connectivitivity nodode"));
         }
 
         [Test]
@@ -219,21 +183,19 @@ namespace DAX.CIM.Differ.Tests.Basic
             var modifications = objectModification.Modifications;
             var reverseModifications = dataSetMember.ReverseChange.Modifications;
 
-            AssertHasModification(modifications, nameof(RatioTapChanger.stepVoltageIncrement), "102", expectedMultiplier: UnitMultiplier.k, expectedUnit: UnitSymbol.V);
-            AssertHasModification(reverseModifications, nameof(RatioTapChanger.stepVoltageIncrement), "100", expectedMultiplier: UnitMultiplier.k, expectedUnit: UnitSymbol.V);
+            var forward = GetModification(modifications, nameof(RatioTapChanger.stepVoltageIncrement));
+            var reverse = GetModification(reverseModifications, nameof(RatioTapChanger.stepVoltageIncrement));
+
+            Assert.That(forward.Value is PerCent forwardValue && forwardValue.Value.IsWithinTolerance(102), $"value of {JsonConvert.SerializeObject(forward)} is not close enough to 102");
+            Assert.That(reverse.Value is PerCent reverseValue && reverseValue.Value.IsWithinTolerance(100), $"value of {JsonConvert.SerializeObject(reverse)} is not close enough to 100");
         }
 
-        static void AssertHasModification(PropertyModification[] modifications, string name, string value, UnitSymbol? expectedUnit = null, UnitMultiplier? expectedMultiplier = null)
+        static PropertyModification GetModification(PropertyModification[] modifications, string name)
         {
-            var modification = modifications.FirstOrDefault(m => m.Name == name)
-                ?? throw new AssertionException($@"Could not find modification with name '{name}' among these:
+            return modifications.FirstOrDefault(m => m.Name == name)
+                   ?? throw new AssertionException($@"Could not find modification with name '{name}' among these:
 
-{string.Join(Environment.NewLine, modifications.Select(m => $"    {m.Name}: {m.Value} (unit: {m.Unit}, mult: {m.Multiplier})"))}");
-
-            Assert.That(modification.Value, Is.EqualTo(value));
-            Assert.That(modification.Unit, Is.EqualTo(expectedUnit));
-            Assert.That(modification.Multiplier, Is.EqualTo(expectedMultiplier));
-
+{string.Join(Environment.NewLine, modifications.Select(m => $"    {m.Name}: {m.Value.ToJson()}"))}");
         }
     }
 }

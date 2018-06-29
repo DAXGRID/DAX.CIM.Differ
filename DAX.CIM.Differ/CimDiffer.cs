@@ -1,14 +1,15 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Xml.Serialization;
-using DAX.CIM.Differ.Extensions;
 using DAX.CIM.PhysicalNetworkModel;
 using DAX.CIM.PhysicalNetworkModel.Changes;
 using DAX.Cson;
 using FastMember;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 // ReSharper disable ReturnTypeCanBeEnumerable.Local
 // ReSharper disable InconsistentNaming
@@ -89,55 +90,31 @@ namespace DAX.CIM.Differ
             foreach (var modification in modifications)
             {
                 var property = modification.Name
-                               ?? throw new ArgumentException($@"Tried to get value from modification without a name: value: {modification.Value}, unit: {modification.Unit}, mult: {modification.Multiplier}");
+                               ?? throw new ArgumentException($@"Tried to get value from modification without a name: {FormatModification(modification)}");
 
                 var getter = ValueGetters.GetOrAdd(type, _ => new ConcurrentDictionary<string, Func<PropertyModification, object>>())
                     .GetOrAdd(property, _ => CreateValueGetter(type, accessor, property));
 
-                accessor[newState, property] = getter(modification);
+                try
+                {
+                    accessor[newState, property] = getter(modification);
+                }
+                catch (Exception exception)
+                {
+                    throw new ApplicationException($"Could not set the value of the '{property}' property on {type} from modification {FormatModification(modification)}", exception);
+                }
             }
 
             return (IdentifiedObject)newState;
         }
 
-        static Func<PropertyModification, object> CreateValueGetter(Type type, TypeAccessor accessor, string property)
+        static string FormatModification(PropertyModification modification) => new
         {
-            var memberType = GetMemberType(type, accessor, property);
-            var valueAccessor = TypeAccessor.Create(memberType);
-
-            if (IsValueType(accessor))
-            {
-                return modification =>
-                {
-                    var newValue = valueAccessor.CreateNew();
-
-                    valueAccessor[newValue, "Value"] = double.Parse(modification.Value);
-                    valueAccessor[newValue, "unit"] = modification.Unit;
-                    valueAccessor[newValue, "multiplier"] = modification.Multiplier;
-
-                    return newValue;
-                };
-            }
-
-            return modification => Convert.ChangeType(modification.Value, memberType);
-        }
+            modification.Name,
+            Value = JsonConvert.SerializeObject(modification.Value),
+        }.ToString();
 
         static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<PropertyModification, object>>> ValueGetters = new ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<PropertyModification, object>>>();
-
-        static IdentifiedObject InnerApplyDiff(IdentifiedObject currentState, Dictionary<string, object> properties)
-        {
-            var targetCsonObject = JObject.Parse(Serializer.SerializeObject(currentState));
-
-            foreach (var property in properties)
-            {
-                var key = property.Key;
-                var value = property.Value;
-
-                targetCsonObject[key] = JToken.FromObject(value);
-            }
-
-            return Serializer.DeserializeObject(targetCsonObject.ToString());
-        }
 
         public IEnumerable<DataSetMember> GetDiff(IEnumerable<IdentifiedObject> previousState, IEnumerable<IdentifiedObject> newState)
         {
@@ -236,62 +213,6 @@ namespace DAX.CIM.Differ
                         Modifications = reverseModifications.ToArray()
                     }
                 };
-
-                //var previousCsonObject = JObject.Parse(Serializer.SerializeObject(previousInstance));
-                //var newCsonObject = JObject.Parse(Serializer.SerializeObject(newInstance));
-
-                //JObject change = null;
-                //JObject reverseChange = null;
-
-                //var propertyNames = GetPropertyNames(previousInstance.GetType());
-
-                //foreach (var property in propertyNames)
-                //{
-                //    // we know this one is the same
-                //    if (property == nameof(IdentifiedObject.mRID)) continue;
-
-                //    var previousValue = previousCsonObject[property];
-                //    var newValue = newCsonObject[property];
-
-                //    if (AreEqualJson(previousValue, newValue)) continue;
-
-                //    if (change == null)
-                //    {
-                //        change = new JObject();
-                //        reverseChange = new JObject();
-
-                //        change["$type"] = type.Name;
-                //        reverseChange["$type"] = type.Name;
-                //    }
-
-                //    change[property] = newValue != null ? JToken.FromObject(newValue) : null;
-                //    reverseChange[property] = previousValue != null ? JToken.FromObject(previousValue) : null;
-                //}
-
-                //if (change == null) continue;
-
-                //var modifications = new List<PropertyModification>();
-                //var reverseModifications = new List<PropertyModification>();
-
-                //yield return new DataSetMember
-                //{
-                //    mRID = Guid.NewGuid().ToString(),
-                //    TargetObject = new TargetObject
-                //    {
-                //        @ref = newInstance.mRID,
-                //        referenceType = type.Name,
-                //    },
-                //    Change = new ObjectModification
-                //    {
-                //        Properties = GetProperties(change),
-                //        Modifications = modifications.ToArray()
-                //    },
-                //    ReverseChange = new ObjectReverseModification
-                //    {
-                //        Properties = GetProperties(reverseChange),
-                //        Modifications = reverseModifications.ToArray()
-                //    }
-                //};
             }
         }
 
@@ -322,76 +243,233 @@ from type {objectType}");
         {
             var getter = Getters
                 .GetOrAdd(type, _ => new ConcurrentDictionary<string, Func<object, object, (PropertyModification, PropertyModification)>>())
-                .GetOrAdd(property, _ => { return CreateGetterFunction(type, property, previousValue, newValue); });
+                .GetOrAdd(property, _ => CreateModificationGetter(type, property));
 
-            return getter(previousValue, newValue);
+            try
+            {
+                return getter(previousValue, newValue);
+            }
+            catch (Exception exception)
+            {
+                throw new ArgumentException($"Could not generate property modifications for the '{property}' property of {type}, value changed from {previousValue} to {newValue}", exception);
+            }
         }
 
-        static Func<object, object, (PropertyModification, PropertyModification)> CreateGetterFunction(Type type, string property, object previousValue, object newValue)
+        static Func<object, object, (PropertyModification, PropertyModification)> CreateModificationGetter(Type type, string property)
         {
             var accessor = TypeAccessor.Create(type);
 
-            if (IsValueType(accessor))
-            {
-                return (prev, nev) =>
-                {
-                    var previousValueField = accessor.GetValueOrNull(previousValue, "Value");
-                    var newValueField = accessor.GetValueOrNull(newValue, "Value");
-
-                    var previousUnitField = accessor.GetValueOrNull(previousValue, "unit");
-                    var newUnitField = accessor.GetValueOrNull(previousValue, "unit");
-
-                    var previousMultiplierField = accessor.GetValueOrNull(previousValue, "multiplier");
-                    var newMultiplierField = accessor.GetValueOrNull(previousValue, "multiplier");
-
-                    if (AreEqual(previousValueField, newValueField)
-                        && AreEqual(previousUnitField, newUnitField)
-                        && AreEqual(previousMultiplierField, newMultiplierField)) return EmptyPropMod;
-
-                    return (
-                        new PropertyModification
-                        {
-                            Name = property,
-                            IsReference = false,
-                            Multiplier = (UnitMultiplier)newMultiplierField,
-                            Unit = (UnitSymbol)newUnitField,
-                            Value = FormatValue(newValueField)
-                        },
-                        new PropertyModification
-                        {
-                            Name = property,
-                            IsReference = false,
-                            Multiplier = (UnitMultiplier)previousMultiplierField,
-                            Unit = (UnitSymbol)previousUnitField,
-                            Value = FormatValue(previousValueField)
-                        }
-                    );
-                };
-            }
-
             return (prev, nev) =>
             {
+                //
+
+                //var previousValue = accessor[prev, property];
+                //var newValue = accessor[nev, property];
+
                 if (AreEqual(prev, nev)) return EmptyPropMod;
 
                 return (
-                    new PropertyModification { Name = property, IsReference = false, Value = prev?.ToString() },
-                    new PropertyModification { Name = property, IsReference = false, Value = nev?.ToString() }
+                    new PropertyModification {Name = property, Value = nev},
+                    new PropertyModification {Name = property, Value = prev} 
                 );
             };
+
+            //if (type == typeof(Point2D))
+            //{
+            //    return (prev, nev) =>
+            //    {
+            //        var previousX = (double)accessor.GetValueOrNull(previousValue, nameof(Point2D.X));
+            //        var newX = (double)accessor.GetValueOrNull(newValue, nameof(Point2D.X));
+            //        var previousY = (double)accessor.GetValueOrNull(previousValue, nameof(Point2D.Y));
+            //        var newY = (double)accessor.GetValueOrNull(newValue, nameof(Point2D.Y));
+
+            //        if (AreEqual(previousX, newX) && AreEqual(previousY, newY)) return EmptyPropMod;
+
+            //        return (
+            //            new PropertyModification
+            //            {
+            //                Name = property,
+            //                IsReference = false,
+            //                Value = EncodeCoords2(newX, newY)
+            //            },
+            //            new PropertyModification
+            //            {
+            //                Name = property,
+            //                IsReference = false,
+            //                Value = EncodeCoords2(previousX, previousY)
+            //            }
+            //        );
+            //    };
+            //}
+
+            //if (IsReferenceType(accessor))
+            //{
+            //    return (prev, nev) =>
+            //    {
+            //        var previousType = (string)accessor.GetValueOrNull(previousValue, nameof(PowerSystemResourceAssets.referenceType));
+            //        var newType = (string)accessor.GetValueOrNull(newValue, nameof(PowerSystemResourceAssets.referenceType));
+            //        var previousRef = (string)accessor.GetValueOrNull(previousValue, nameof(PowerSystemResourceAssets.@ref));
+            //        var newRef = (string)accessor.GetValueOrNull(newValue, nameof(PowerSystemResourceAssets.@ref));
+
+            //        if (AreEqual(previousType, newType) && AreEqual(previousRef, newRef)) return EmptyPropMod;
+
+            //        return (
+            //            new PropertyModification
+            //            {
+            //                Name = property,
+            //                IsReference = true,
+            //                Value = EncodeRef(newType, newRef)
+            //            },
+            //            new PropertyModification
+            //            {
+            //                Name = property,
+            //                IsReference = true,
+            //                Value = EncodeRef(previousType, previousRef)
+            //            }
+            //        );
+            //    };
+            //}
+
+            //if (IsValueType(accessor))
+            //{
+            //    return (prev, nev) =>
+            //    {
+            //        var previousValueField = accessor.GetValueOrNull(previousValue, nameof(KiloActivePower.Value));
+            //        var newValueField = accessor.GetValueOrNull(newValue, nameof(KiloActivePower.Value));
+
+            //        var previousUnitField = accessor.GetValueOrNull(previousValue, nameof(KiloActivePower.unit));
+            //        var newUnitField = accessor.GetValueOrNull(previousValue, nameof(KiloActivePower.unit));
+
+            //        var previousMultiplierField = accessor.GetValueOrNull(previousValue, nameof(KiloActivePower.multiplier));
+            //        var newMultiplierField = accessor.GetValueOrNull(previousValue, nameof(KiloActivePower.multiplier));
+
+            //        if (AreEqual(previousValueField, newValueField)
+            //            && AreEqual(previousUnitField, newUnitField)
+            //            && AreEqual(previousMultiplierField, newMultiplierField)) return EmptyPropMod;
+
+            //        return (
+            //            new PropertyModification
+            //            {
+            //                Name = property,
+            //                IsReference = false,
+            //                Multiplier = (UnitMultiplier)newMultiplierField,
+            //                Unit = (UnitSymbol)newUnitField,
+            //                Value = FormatValue(newValueField)
+            //            },
+            //            new PropertyModification
+            //            {
+            //                Name = property,
+            //                IsReference = false,
+            //                Multiplier = (UnitMultiplier)previousMultiplierField,
+            //                Unit = (UnitSymbol)previousUnitField,
+            //                Value = FormatValue(previousValueField)
+            //            }
+            //        );
+            //    };
+            //}
+
+            //return (prev, nev) =>
+            //{
+            //    if (AreEqual(prev, nev)) return EmptyPropMod;
+
+            //    return (
+            //        new PropertyModification { Name = property, IsReference = false, Value = nev?.ToString() },
+            //        new PropertyModification { Name = property, IsReference = false, Value = prev?.ToString() }
+            //    );
+            //};
+        }
+
+        static string EncodeRef(string type, string @ref) => $"{type}/{@ref}";
+
+        static bool IsReferenceType(TypeAccessor accessor)
+        {
+            var members = accessor.GetMembers().ToArray();
+
+            return members.Any(m => m.Name == nameof(PowerSystemResourceAssets.referenceType))
+                   && members.Any(m => m.Name == nameof(PowerSystemResourceAssets.@ref));
+        }
+
+        static string EncodeCoords2(double newX, double newY)
+        {
+            return string.Concat("[", newX.ToString(InvariantCulture), ",", newY.ToString(InvariantCulture), "]");
+        }
+
+        static Func<PropertyModification, object> CreateValueGetter(Type type, TypeAccessor accessor, string property)
+        {
+            var memberType = GetMemberType(type, accessor, property);
+            var valueAccessor = TypeAccessor.Create(memberType);
+
+            return moditication => moditication.Value;
+
+            //if (IsReferenceType(valueAccessor))
+            //{
+            //    return modification =>
+            //    {
+            //        var newValue = valueAccessor.CreateNew();
+            //        var parts = modification.Value.Split('/').Select(v => v.Trim()).ToArray();
+
+            //        if (parts.Length != 2)
+            //        {
+            //            throw new FormatException($"Could not turn the text '{modification.Value}' into a reference - expected exactly two parts separated by /");
+            //        }
+
+            //        valueAccessor[newValue, nameof(PowerSystemResourceAssets.referenceType)] = parts[0];
+            //        valueAccessor[newValue, nameof(PowerSystemResourceAssets.@ref)] = parts[1];
+
+            //        return newValue;
+            //    };
+            //}
+
+            //if (IsValueType(accessor))
+            //{
+            //    return modification =>
+            //    {
+            //        var newValue = valueAccessor.CreateNew();
+
+            //        valueAccessor[newValue, "Value"] = double.Parse(modification.Value, InvariantCulture);
+            //        valueAccessor[newValue, "unit"] = modification.Unit;
+            //        valueAccessor[newValue, "multiplier"] = modification.Multiplier;
+
+            //        return newValue;
+            //    };
+            //}
+
+            //if (memberType.IsEnum)
+            //{
+            //    return modification => modification.Value != null
+            //        ? Enum.Parse(memberType, modification.Value)
+            //        : null;
+            //}
+
+            //return modification =>
+            //{
+            //    try
+            //    {
+            //        return Convert.ChangeType(modification.Value, memberType);
+            //    }
+            //    catch (Exception exception)
+            //    {
+            //        throw new FormatException($"Could not turn '{modification.Value}' into a {memberType}", exception);
+            //    }
+            //};
         }
 
         static bool IsValueType(TypeAccessor accessor)
         {
             var members = accessor.GetMembers().ToList();
-            var isValueType = members.Count == 3
-                              && members.Any(m => m.Name == "Value")
-                              && members.Any(m => m.Name == "unit")
-                              && members.Any(m => m.Name == "multiplier");
+            var isValueType = members.Any(m => m.Name == nameof(KiloActivePower.Value))
+                              && members.Any(m => m.Name == nameof(KiloActivePower.unit))
+                              && members.Any(m => m.Name == nameof(KiloActivePower.multiplier));
             return isValueType;
         }
 
         static string FormatValue(object value)
         {
+            if (value is double doubleValue)
+            {
+                return doubleValue.ToString(InvariantCulture);
+            }
+
             return value?.ToString();
         }
 
@@ -399,32 +477,21 @@ from type {objectType}");
             = new ConcurrentDictionary<Type, ConcurrentDictionary<string, Func<object, object, (PropertyModification, PropertyModification)>>>();
 
         static readonly (PropertyModification, PropertyModification) EmptyPropMod = (null, null);
+        static readonly CultureInfo InvariantCulture = CultureInfo.InvariantCulture;
 
         static Dictionary<string, object> GetProperties(JObject obj) => obj.Properties()
             .ToDictionary(p => p.Name, p => p.Value.ToObject<object>());
 
         static bool AreEqual(object previousValue, object newValue)
         {
+            return JsonConvert.SerializeObject(previousValue).Equals(JsonConvert.SerializeObject(newValue));
+            
             if (ReferenceEquals(null, previousValue) && ReferenceEquals(null, newValue)) return true;
             if (ReferenceEquals(null, previousValue)) return false;
             if (ReferenceEquals(null, newValue)) return false;
+
 
             return previousValue.Equals(newValue);
-        }
-
-        static bool AreEqualJson(JToken previousValue, JToken newValue)
-        {
-            if (ReferenceEquals(null, previousValue) && ReferenceEquals(null, newValue)) return true;
-
-            if (ReferenceEquals(null, previousValue)) return false;
-
-            if (ReferenceEquals(null, newValue)) return false;
-
-            var previousStr = previousValue.ToString();
-            var newStr = newValue.ToString();
-            var areEqual = string.Equals(previousStr, newStr, StringComparison.Ordinal);
-
-            return areEqual;
         }
 
         static string[] GetPropertyNames(Type type)
