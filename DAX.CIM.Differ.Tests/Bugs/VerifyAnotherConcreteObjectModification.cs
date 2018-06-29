@@ -102,11 +102,10 @@ yields this diff:
 
 {change}");
 
-            var propertyNamesIncludedInTheDiff = objectModification.Properties.Keys.OrderBy(n => n).ToArray();
+            var propertyNamesIncludedInTheDiff = objectModification.Modifications.Select(m => m.Name).OrderBy(n => n).ToArray();
 
             Assert.That(propertyNamesIncludedInTheDiff, Is.EqualTo(new[]
             {
-                "$type",
                 "gch",
                 "Location",
                 "Names",

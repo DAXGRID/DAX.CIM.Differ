@@ -36,13 +36,8 @@ namespace DAX.CIM.Differ.Tests.Basic
             {
                 mRID = Guid.NewGuid().ToString(),
                 Change = new ObjectDeletion(),
-                TargetObject = new TargetObject {@ref = deletedObject.mRID, referenceType = nameof(ConnectivityNode)},
-                ReverseChange = new ObjectReverseModification
-                {
-                    Properties = JObject.Parse(_serializer.SerializeObject(deletedObject))
-                        .Properties()
-                        .ToDictionary(p => p.Name, p => p.Value.ToObject<object>())
-                }
+                TargetObject = new TargetObject { @ref = deletedObject.mRID, referenceType = nameof(ConnectivityNode) },
+                ReverseChange = new ObjectReverseModification()
             };
 
             var result = _differ.ApplyDiff(new[] { deletedObject }, new[] { change }).ToList();
@@ -92,19 +87,13 @@ namespace DAX.CIM.Differ.Tests.Basic
                 mRID = Guid.NewGuid().ToString(),
                 Change = new ObjectModification
                 {
-                    Properties = new Dictionary<string, object>
-                    {
-                        {"description", "this is my connectivity node (spelning corected)"}
-                    }
+                    Modifications = new[] { new PropertyModification { Name = "description", Value = "this is my connectivity node (spelning corected)" } }
                 },
 
                 // not necessary for this test, but play it realistic
                 ReverseChange = new ObjectReverseModification
                 {
-                    Properties = new Dictionary<string, object>
-                    {
-                        {"description", "this is my connectivitivity nodode"}
-                    }
+                    Modifications = new[] { new PropertyModification { Name = "description", Value = "this is my connectivitivity nodode" } }
                 },
 
                 TargetObject = new TargetObject { @ref = target.mRID, referenceType = nameof(ConnectivityNode) }

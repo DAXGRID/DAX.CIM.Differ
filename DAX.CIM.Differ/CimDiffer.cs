@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Xml.Serialization;
+using DAX.CIM.Differ.Extensions;
 using DAX.CIM.PhysicalNetworkModel;
 using DAX.CIM.PhysicalNetworkModel.Changes;
 using DAX.Cson;
@@ -33,6 +34,12 @@ namespace DAX.CIM.Differ
                 var change = dataSetMember.Change;
 
                 var targetObject = dataSetMember.TargetObject;
+
+                if (targetObject == null)
+                {
+                    throw new ArgumentException($"TargetObject in data set member with mRID {dataSetMember.mRID} was null");
+                }
+
                 var mRID = targetObject.@ref;
 
                 switch (change)
@@ -49,9 +56,6 @@ namespace DAX.CIM.Differ
 
                     case ObjectModification objectModification:
                         var modifications = objectModification.Modifications;
-
-
-                        var properties = objectModification.Properties;
 
                         if (!stateDictionary.TryGetValue(mRID, out var currentState))
                         {
@@ -76,7 +80,7 @@ namespace DAX.CIM.Differ
         {
             var type = currentState.GetType();
             var accessor = TypeAccessor.Create(type);
-            var newState = accessor.CreateNew();
+            var newState = currentState.CloneNew();
 
             // set all non-modified properties
             var propertyNames = GetPropertyNames(type).Except(modifications.Select(m => m.Name));
@@ -92,12 +96,17 @@ namespace DAX.CIM.Differ
                 var property = modification.Name
                                ?? throw new ArgumentException($@"Tried to get value from modification without a name: {FormatModification(modification)}");
 
-                var getter = ValueGetters.GetOrAdd(type, _ => new ConcurrentDictionary<string, Func<PropertyModification, object>>())
-                    .GetOrAdd(property, _ => CreateValueGetter(type, accessor, property));
-
                 try
                 {
-                    accessor[newState, property] = getter(modification);
+                    accessor[newState, property] = modification.Value;
+
+                    var valuePresenceMember = ValuePresenceMembers.GetOrAdd(type, _ => new ConcurrentDictionary<string, Member>())
+                        .GetOrAdd(property, _ => accessor.GetMembers().FirstOrDefault(m => m.Name == $"{property}Specified"));
+
+                    if (valuePresenceMember != null)
+                    {
+                        accessor[newState, valuePresenceMember.Name] = !ReferenceEquals(modification.Value, null);
+                    }
                 }
                 catch (Exception exception)
                 {
@@ -107,6 +116,8 @@ namespace DAX.CIM.Differ
 
             return (IdentifiedObject)newState;
         }
+
+        static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, Member>> ValuePresenceMembers = new ConcurrentDictionary<Type, ConcurrentDictionary<string, Member>>();
 
         static string FormatModification(PropertyModification modification) => new
         {
@@ -152,7 +163,7 @@ namespace DAX.CIM.Differ
                     Change = new ObjectDeletion(),
                     ReverseChange = new ObjectReverseModification
                     {
-                        Properties = GetProperties(JObject.Parse(Serializer.SerializeObject(deletedObject)))
+                        Modifications = GetModifications(deletedObject)
                     }
                 };
             }
@@ -216,6 +227,19 @@ namespace DAX.CIM.Differ
             }
         }
 
+        PropertyModification[] GetModifications(IdentifiedObject identifiedObject)
+        {
+            var type = identifiedObject.GetType();
+            var propertyNames = GetPropertyNames(type).Except(new[] { nameof(IdentifiedObject.mRID) });
+            var accessor = TypeAccessor.Create(type);
+
+            return propertyNames.Select(property => new PropertyModification
+            {
+                Name = property,
+                Value = accessor[identifiedObject, property]
+            }).ToArray();
+        }
+
         static Type GetMemberType(Type objectType, TypeAccessor accessor, string property)
         {
             return MemberTypes.GetOrAdd(objectType, _ => new ConcurrentDictionary<string, Type>())
@@ -269,8 +293,8 @@ from type {objectType}");
                 if (AreEqual(prev, nev)) return EmptyPropMod;
 
                 return (
-                    new PropertyModification {Name = property, Value = nev},
-                    new PropertyModification {Name = property, Value = prev} 
+                    new PropertyModification { Name = property, Value = nev },
+                    new PropertyModification { Name = property, Value = prev }
                 );
             };
 
@@ -485,7 +509,7 @@ from type {objectType}");
         static bool AreEqual(object previousValue, object newValue)
         {
             return JsonConvert.SerializeObject(previousValue).Equals(JsonConvert.SerializeObject(newValue));
-            
+
             if (ReferenceEquals(null, previousValue) && ReferenceEquals(null, newValue)) return true;
             if (ReferenceEquals(null, previousValue)) return false;
             if (ReferenceEquals(null, newValue)) return false;

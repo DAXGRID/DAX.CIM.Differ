@@ -69,9 +69,8 @@ Yields this diff:
 
             var objectModification = (ObjectModification)dataSetMember.Change;
 
-            Assert.That(objectModification.Properties.Keys.OrderBy(n => n).ToArray(), Is.EqualTo(new[]
+            Assert.That(objectModification.Modifications.Select(m => m.Name).OrderBy(n => n).ToArray(), Is.EqualTo(new[]
             {
-                "$type",
                 "name",
                 "Substations"
             }));

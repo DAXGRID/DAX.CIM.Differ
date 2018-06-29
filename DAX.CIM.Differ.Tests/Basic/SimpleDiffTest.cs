@@ -6,6 +6,7 @@ using DAX.CIM.Differ.Tests.Stubs;
 using DAX.CIM.PhysicalNetworkModel;
 using DAX.CIM.PhysicalNetworkModel.Changes;
 using DAX.Cson;
+using FastMember;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
@@ -71,7 +72,6 @@ namespace DAX.CIM.Differ.Tests.Basic
 
             var result = _differ.GetDiff(oldState, None).ToList();
 
-
             Assert.That(result.Count, Is.EqualTo(1));
 
             var dataSetMember = result.First();
@@ -86,21 +86,50 @@ namespace DAX.CIM.Differ.Tests.Basic
 
             Assert.That(change, Is.Not.Null);
 
-            var properties = change.Properties;
+            //var properties = change.Modifications.ToDictionary(m => m.Name, m => m.Value);
 
-            var originalProperties = JObject.Parse(_serializer.SerializeObject(identifiedObject))
-                .Properties()
+            var originalProperties = JObject.Parse(_serializer.SerializeObject(identifiedObject)).Properties()
                 .ToDictionary(p => p.Name, p => p.Value.ToObject<object>());
+
+            var properties = ReconstructObject<ConnectivityNode>(dataSetMember.TargetObject.@ref, change.Modifications);
 
             AssertDictionariesAreTheSame(properties, originalProperties);
         }
 
+        Dictionary<string, object> ReconstructObject<T>(string mRID, PropertyModification[] modifications)
+        {
+            var accessor = TypeAccessor.Create(typeof(T));
+
+            var target = (IdentifiedObject)accessor.CreateNew();
+            accessor[target, nameof(IdentifiedObject.mRID)] = mRID;
+
+            var dataSetMember = new DataSetMember
+            {
+                mRID = Guid.NewGuid().ToString(),
+                TargetObject = new TargetObject { @ref = mRID, referenceType = typeof(T).Name },
+                Change = new ObjectModification { Modifications = modifications }
+            };
+
+            var result = new CimDiffer()
+                .ApplyDiff(new[] { target }, new[] { dataSetMember })
+                .Single();
+
+            return JObject.Parse(_serializer.SerializeObject(result)).Properties()
+                .ToDictionary(p => p.Name, p => p.Value.ToObject<object>());
+        }
+
         static void AssertDictionariesAreTheSame(Dictionary<string, object> d1, Dictionary<string, object> d2)
         {
-            var dict1 = d1.ToPrettyJson();
-            var dict2 = d2.ToPrettyJson();
+            var dict1 = d1.OrderBy(k => k.Key).ToPrettyJson();
+            var dict2 = d2.OrderBy(k => k.Key).ToPrettyJson();
 
-            Assert.That(dict1, Is.EqualTo(dict2));
+            Assert.That(dict1, Is.EqualTo(dict2), $@"This dictionary
+
+{dict1}
+
+was not equal to this dictionary
+
+{dict2}");
         }
 
         [Test]
